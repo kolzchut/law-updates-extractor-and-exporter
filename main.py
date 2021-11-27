@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def should_insert_booklet(last_booklet, booklet):
-    return True # not last_booklet or last_booklet['booklet_number'] < int(booklet['booklet_number'])
+    return not last_booklet or last_booklet['booklet_number'] < int(booklet['booklet_number'])
 
 
 def main():

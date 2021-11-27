@@ -27,17 +27,15 @@ def clean_data(results, booklet_type):
             description = data['Document'][0]['DisplayName']
             summary = data['DocSummary']['DescriptionHtmlString']
 
-        print(f'summary: {summary}')
-        print(f'description: {description}')
         datum = {
             'creation_date': data['CreationDate'],
             'modify_date': data['ModifyDate'],
             'number_of_pages': data['Pages'],
             'published_date': data['PublishDate'],
             'file_name': data['Document'][0]['FileName'],
-            'display_name': data['Document'][0]['DisplayName'],
+            'display_name': summary,
             'extension': data['Document'][0]['Extension'],
-            'description': data['DocSummary']['DescriptionHtmlString'],
+            'description': description,
             'booklet_number': data['BookletNum'],
             'foreign_year': data['ForeignYear'],
             'booklet_type': booklet_type
