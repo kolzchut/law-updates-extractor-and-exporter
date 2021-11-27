@@ -1,5 +1,6 @@
 import base64
 import logging
+import os
 
 import requests
 
@@ -11,7 +12,7 @@ class JiraApi:
     def __init__(self):
         self.url = 'https://kolzchut.atlassian.net/rest/api/2/issue/'
         self.user_name = 'moshegrey@gmail.com'
-        api_token = 'P3z3Re8fIGbcHY9Shc5u49C0'
+        api_token = os.environ['JIRA_API_TOKEN']
         token = f'{self.user_name}:{api_token}'
         bytes_token = bytes(token, encoding='utf8')
         token = str(base64.b64encode(bytes_token).decode('utf8'))
