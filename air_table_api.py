@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 
 import requests
@@ -9,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class AirTable:
     def __init__(self):
-        self.token = 'key19vwRQnsgl8buC'
+        self.token = os.environ.get('AIRTABLE_TOKEN_API')
         self.types = {
             'takana': 'תקנה',
             'law': 'חוק',
