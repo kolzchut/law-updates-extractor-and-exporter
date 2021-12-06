@@ -23,12 +23,13 @@ class JiraApi:
 
     def send(self, data):
         for datum in data:
+            summary = datum['display_name'] if len(datum['display_name']) < 255 else f"{datum['display_name'][:250]}..."
             payload = {
                 'fields': {
                     'project': {
                         'key': 'KOL',
                     },
-                    'summary': datum['display_name'],
+                    'summary': summary,
                     'description': datum['description'],
                     'issuetype': {
                         'name': 'שינוי חקיקה (עברית)',
@@ -36,6 +37,7 @@ class JiraApi:
                     'reporter': self.user_name,
                     'customfield_11690': datum['published_date'],
                     'customfield_11689': datum['file_name'],
+                    'customfield_11703': datum['display_name'],
                 }
             }
             logger.info(f'headers: {self.headers}')

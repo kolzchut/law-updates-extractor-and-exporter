@@ -21,12 +21,12 @@ def clean_data(results, booklet_type):
         if 'תיקונים עקיפים:' in data['DocSummary']['DescriptionHtmlString']:
             summary, description = data['DocSummary']['DescriptionHtmlString'].split('תיקונים עקיפים:')
             summary = summary.replace('<br/>', '')
-            display_name = data['Document'][0]['DisplayName'].replace('<br/>', '</p><p>')
-            description = description.strip('<br/>').replace('<br/>', '</p><p>')
-            description = f"<p>{display_name}</p><p>{description}</p>"
+            display_name = data['Document'][0]['DisplayName'].replace('<br/>', '\n')
+            description = description.strip('<br/>').replace('<br/>', '\n')
+            description = f"{display_name}\n{description}"
         else:
-            description = f"<p>{data['Document'][0]['DisplayName'].replace('<br/>', '</p><p>')}</p>"
-            summary = f"<p>{data['DocSummary']['DescriptionHtmlString'].replace('<br/>', '</p><p>')}</p>"
+            description = data['Document'][0]['DisplayName'].replace('<br/>', '\n')
+            summary = data['DocSummary']['DescriptionHtmlString'].replace('<br/>', '')
 
         datum = {
             'creation_date': data['CreationDate'],
