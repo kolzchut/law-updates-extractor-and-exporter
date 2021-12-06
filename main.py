@@ -2,7 +2,6 @@
 
 import argparse
 import logging
-from pprint import pprint
 
 from air_table_api import AirTable
 from cleaner import clean_data
@@ -11,12 +10,12 @@ from scraper import get_html
 from jira import JiraApi
 
 
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 def should_insert_booklet(last_booklet, booklet):
-    return True # not last_booklet or last_booklet['booklet_number'] < int(booklet['booklet_number'])
+    return not last_booklet or last_booklet['booklet_number'] < int(booklet['booklet_number'])
 
 
 def main():
