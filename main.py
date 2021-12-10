@@ -3,7 +3,6 @@
 import argparse
 import logging
 
-from air_table_api import AirTable
 from cleaner import clean_data
 import database
 from scraper import get_html
@@ -41,8 +40,6 @@ def main():
         laws = [law for law in laws if should_insert_booklet(last_law, law)]
         takanot = [takana for takana in takanot if should_insert_booklet(last_takana, takana)]
 
-        air_table = AirTable()
-
         for law in laws:
             db.insert_law(law)
 
@@ -52,7 +49,6 @@ def main():
         laws = list(laws)
         laws.extend(takanot)
         if laws:
-            air_table.create_records(laws)
             jira_api = JiraApi()
             jira_api.send(laws)
 
