@@ -7,6 +7,7 @@ from cleaner import clean_data
 import database
 from scraper import get_html
 from jira import JiraApi
+from pprint import pprint
 
 
 # logging.basicConfig(level=logging.INFO)
