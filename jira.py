@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class JiraApi:
     def __init__(self):
         self.url = 'https://kolzchut.atlassian.net/rest/api/2/issue/'
-        self.user_name = 'moshegrey@gmail.com'
+        self.user_name = os.environ['JIRA_API_USER']
         api_token = os.environ['JIRA_API_TOKEN']
         token = f'{self.user_name}:{api_token}'
         bytes_token = bytes(token, encoding='utf8')
