@@ -46,6 +46,7 @@ class JiraApi:
             if res.status_code >= 300:
                 logger.error(f'status code: {res.status_code}')
                 logger.error(f'result: {res.content}')
+                logger.error(f'the file that failed is: {datum["file_name"]}')
                 break
             else:
                 logger.info(f'status code: {res.status_code}')
