@@ -18,8 +18,8 @@ def should_insert_booklet(last_booklet, booklet):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--date')
-    parser.add_argument('-l', '--last-booklet', type=int)
+    parser.add_argument('-l', '--last-law', type=int)
+    parser.add_argument('-t', '--last-takana', type=int)
     args = parser.parse_args()
 
     laws_dict = get_html('laws', 100)
@@ -30,9 +30,13 @@ def main():
 
     with database.Database() as db:
 
-        last_law = db.get_last_law()
+        if args.last_law:
+            last_law = db.get_law(args.last_law)
+        else:
+            last_law = db.get_last_law()
+
         if args.last_booklet:
-            last_takana = db.get_takana(args.last_booklet)
+            last_takana = db.get_takana(args.last_takana)
         else:
             last_takana = db.get_last_takana()
 
