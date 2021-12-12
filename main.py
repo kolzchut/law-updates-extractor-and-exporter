@@ -46,7 +46,7 @@ def main():
         else:
             last_law = db.get_last_law()
 
-        if args.last_booklet:
+        if args.last_takana:
             last_takana = db.get_takana(args.last_takana)
         else:
             last_takana = db.get_last_takana()
