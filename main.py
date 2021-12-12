@@ -18,9 +18,20 @@ def should_insert_booklet(last_booklet, booklet):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--date')
-    parser.add_argument('-l', '--last-booklet', type=int)
+    parser.add_argument('-l', '--last-law', type=int)
+    parser.add_argument('-t', '--last-takana', type=int)
+    parser.add_argument('--log')
     args = parser.parse_args()
+
+    log = {
+        'debug': logging.DEBUG,
+        'info': logging.INFO,
+        'warning': logging.WARNING,
+        'error': logging.ERROR,
+    }
+
+    if args.log:
+        logging.basicConfig(level=log[args.log])
 
     laws_dict = get_html('laws', 100)
     takanot_dict = get_html('takanot', 100)
@@ -30,14 +41,28 @@ def main():
 
     with database.Database() as db:
 
-        last_law = db.get_last_law()
-        if args.last_booklet:
-            last_takana = db.get_takana(args.last_booklet)
+        if args.last_law:
+            last_law = db.get_law(args.last_law)
+        else:
+            last_law = db.get_last_law()
+
+        if args.last_takana:
+            last_takana = db.get_takana(args.last_takana)
         else:
             last_takana = db.get_last_takana()
 
         laws = [law for law in laws if should_insert_booklet(last_law, law)]
         takanot = [takana for takana in takanot if should_insert_booklet(last_takana, takana)]
+
+        if laws:
+            logger.info(f'there are {len(laws)} new laws')
+        else:
+            logger.info(f'there are no new laws')
+
+        if takanot:
+            logger.info(f'there are {len(takanot)} new takanot')
+        else:
+            logger.info(f'there are no new takanot')
 
         for law in laws:
             db.insert_law(law)

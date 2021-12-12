@@ -42,10 +42,14 @@ class Database:
     def get_last_takana(self):
         return self.get_last_of_type(self.booklet_types['takana'])
 
-    def get_takana(self, booklet_number):
-        print(booklet_number, type(booklet_number))
-        with self.conn:
-            return self.conn.execute(f'''SELECT id, file_name, booklet_number, booklet_creation_date
-            FROM booklet
-            WHERE booklet_type = {self.booklet_types['takana']} AND booklet_number = :booklet_number''',
-                                     {'booklet_number': booklet_number}).fetchone()
+    def get_type(self, booklet_type, booklet_number):
+        return self.conn.execute(f'''SELECT id, file_name, booklet_number, booklet_creation_date
+        FROM booklet
+        WHERE booklet_type = {booklet_type} AND booklet_number = :booklet_number''',
+                                 {'booklet_number': booklet_number}).fetchone()
+
+    def get_law(self, law_number):
+        return self.get_type(self.booklet_types['law'], law_number)
+
+    def get_takana(self, takana_number):
+        return self.get_type(self.booklet_types['takana'], takana_number)

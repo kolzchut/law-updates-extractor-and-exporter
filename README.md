@@ -7,4 +7,7 @@ There are two required environment variables:
 - `JIRA_API_TOKEN`: the token for said user
 
 ## Script parameters
-- `--last-booklet`, `-l`: override the last booklet number stored in the sqlite DB and get all updates since this one
+- `--last-takana`, `-t`: override the last takana number stored in the sqlite DB and get all updates since this one
+- `--last-law`, `-l`: override the last law number stored in the sqlite DB and get all updates since this one
+- `--log`: enable to change the log level- possible parameters are:
+  - debug, info, warning, error
