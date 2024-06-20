@@ -10,14 +10,19 @@ def clean(data):
 
 
 def clean_data(results, booklet_type):
+    split_texts = ["תיקונים עקיפים:", "תיקון עקיף:"]  # Define the texts to split the description
+
     for result_dict in reversed(results['Results']):
         data = result_dict['Data']
         if len(data['Document']) > 1:
             logger.error(f'data has more than 1 document {data["Document"][0]["DisplayName"]}')
             exit()
 
-        if 'תיקונים עקיפים:' in data['DocSummary']['DescriptionHtmlString']:
-            summary, description = data['DocSummary']['DescriptionHtmlString'].split('תיקונים עקיפים:')
+        description_html = data['DocSummary']['DescriptionHtmlString']
+        split_text = next((text for text in split_texts if text in description_html), None)
+
+        if split_text:
+            summary, description = description_html.split(split_text)
             doc_summary = [summary.replace('<br/>', '')]
             display_name = data['Document'][0]['DisplayName'].replace('<br/>', '\n')
             description = description.strip('<br/>').replace('<br/>', '\n')
