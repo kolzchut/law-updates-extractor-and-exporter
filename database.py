@@ -4,7 +4,8 @@ import sqlite3
 class Database:
     booklet_types = {
         "law": 1,
-        "takana": 2
+        "takana": 2,
+        "notification": 3
     }
 
     def __enter__(self):
@@ -31,6 +32,9 @@ class Database:
     def insert_law(self, law):
         self.insert_item(self.booklet_types['law'], law)
 
+    def insert_notification(self, notification):
+        self.insert_item(self.booklet_types['notification'], notification)
+
     def get_last_of_type(self, item_type):
         with self.conn:
             return self.conn.execute(f'''SELECT id, file_name, booklet_number, booklet_creation_date
@@ -41,6 +45,9 @@ class Database:
 
     def get_last_takana(self):
         return self.get_last_of_type(self.booklet_types['takana'])
+
+    def get_last_notification(self):
+        return self.get_last_of_type(self.booklet_types['notification'])
 
     def get_type(self, booklet_type, booklet_number):
         return self.conn.execute(f'''SELECT id, file_name, booklet_number, booklet_creation_date
@@ -53,3 +60,6 @@ class Database:
 
     def get_takana(self, takana_number):
         return self.get_type(self.booklet_types['takana'], takana_number)
+
+    def get_notification(self, notification_number):
+        return self.get_type(self.booklet_types['notification'], notification_number)

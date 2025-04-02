@@ -14,6 +14,7 @@ def get_html(source, limit=10, skip=0):
     url = 'https://rfa.justice.gov.il/SearchPredefinedApi/Reshumot/Search'
     sources = {
         'laws': {'skip': skip, 'limit': limit, 'FolderType': "1"},
+        'notifications': {'skip': skip, 'limit': limit, 'FolderType': "2"},
         'takanot': {'skip': skip, 'limit': limit, 'FolderType': "3"},
     }
     res = requests.post(url, json=sources[source], verify=False)
