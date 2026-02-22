@@ -58,6 +58,10 @@ def main():
             f'for gaps (default: {DEFAULT_LOOKBACK})'
         )
     )
+    parser.add_argument(
+        '--dry-run', action='store_true',
+        help='Preview what would be inserted into the DB and sent to Jira, without doing either'
+    )
     parser.add_argument('--log')
     args = parser.parse_args()
 
@@ -123,20 +127,29 @@ def main():
             logger.info(f'there are no new notifications')
 
         for law in laws:
-            db.insert_law(law)
+            if args.dry_run:
+                print(f'[DRY RUN] would insert law: {law["booklet_number"]} – {law["display_name"]}')
+            else:
+                db.insert_law(law)
 
         for takana in takanot:
-            db.insert_takana(takana)
+            if args.dry_run:
+                print(f'[DRY RUN] would insert takana: {takana["booklet_number"]} – {takana["display_name"]}')
+            else:
+                db.insert_takana(takana)
 
         for notification in notifications:
-            db.insert_notification(notification)
+            if args.dry_run:
+                print(f'[DRY RUN] would insert notification: {notification["booklet_number"]} – {notification["display_name"]}')
+            else:
+                db.insert_notification(notification)
 
         laws = list(laws)
         laws.extend(takanot)
         laws.extend(notifications)
         if laws:
             jira_api = JiraApi()
-            jira_api.send(laws)
+            jira_api.send(laws, dry_run=args.dry_run)
 
     logger.info('done')
 

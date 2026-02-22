@@ -21,7 +21,7 @@ class JiraApi:
             'authorization': f'Basic {token}',
         }
 
-    def send(self, data):
+    def send(self, data, dry_run=False):
         for datum in data:
             summary = datum['display_name'] if len(datum['display_name']) < 255 else f"{datum['display_name'][:250]}..."
             payload = {
@@ -41,6 +41,10 @@ class JiraApi:
                 }
             }
             logger.info(f'headers: {self.headers}')
+            if dry_run:
+                logger.info(f'[DRY RUN] would POST to {self.url}')
+                print(f'[DRY RUN] Jira issue payload:\n{payload}')
+                continue
             res = requests.post(self.url, headers=self.headers, json=payload)
 
             if res.status_code >= 300:
