@@ -83,6 +83,17 @@ def main():
     takanot = clean_data(takanot_dict, 'takana')
     notifications = clean_data(notifications_dict, 'notification')
 
+    # Deduplicate within each batch by booklet_number, keeping the last occurrence
+    def dedup(items):
+        seen = {}
+        for item in items:
+            seen[item['booklet_number']] = item
+        return list(seen.values())
+
+    laws = dedup(laws)
+    takanot = dedup(takanot)
+    notifications = dedup(notifications)
+
     with database.Database() as db:
 
         if args.last_law:
@@ -144,12 +155,15 @@ def main():
             else:
                 db.insert_notification(notification)
 
-        laws = list(laws)
-        laws.extend(takanot)
-        laws.extend(notifications)
-        if laws:
-            jira_api = JiraApi()
-            jira_api.send(laws, dry_run=args.dry_run)
+        all_items = list(laws)
+        all_items.extend(takanot)
+        all_items.extend(notifications)
+        if all_items:
+            if args.dry_run:
+                print(f'[DRY RUN] would send {len(all_items)} item(s) to Jira')
+            else:
+                jira_api = JiraApi()
+                jira_api.send(all_items)
 
     logger.info('done')
 
