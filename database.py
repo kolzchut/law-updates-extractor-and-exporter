@@ -63,3 +63,20 @@ class Database:
 
     def get_notification(self, notification_number):
         return self.get_type(self.booklet_types['notification'], notification_number)
+
+    def get_all_numbers_of_type(self, item_type):
+        with self.conn:
+            rows = self.conn.execute(
+                f'SELECT booklet_number FROM booklet WHERE booklet_type = {item_type}'
+            ).fetchall()
+            return {int(row['booklet_number']) for row in rows}
+
+    def get_all_law_numbers(self):
+        return self.get_all_numbers_of_type(self.booklet_types['law'])
+
+    def get_all_takana_numbers(self):
+        return self.get_all_numbers_of_type(self.booklet_types['takana'])
+
+    def get_all_notification_numbers(self):
+        return self.get_all_numbers_of_type(self.booklet_types['notification'])
+

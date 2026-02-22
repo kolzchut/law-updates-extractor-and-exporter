@@ -11,9 +11,39 @@ from jira import JiraApi
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_FETCH_LIMIT = 500
+DEFAULT_LOOKBACK = 50
 
-def should_insert_booklet(last_booklet, booklet):
-    return not last_booklet or last_booklet['booklet_number'] < int(booklet['booklet_number'])
+
+def should_insert_booklet(last_booklet, booklet, existing_numbers: set, lookback: int):
+    """
+    Return True if this booklet should be inserted into the DB.
+
+    Rules:
+    - Skip if already in the DB (prevents duplicates).
+    - If no last_booklet exists, treat everything as new.
+    - Otherwise accept anything within `lookback` items behind the last known
+      number, so that gaps (items the API skipped on a previous run) are
+      back-filled, as well as anything newer than the last known number.
+    """
+    booklet_num = int(booklet['booklet_number'])
+
+    if booklet_num in existing_numbers:
+        return False  # already stored, skip
+
+    if not last_booklet:
+        return True
+
+    try:
+        last_num = int(last_booklet['booklet_number'])
+    except Exception:
+        logger.warning(
+            f"Unable to parse last_booklet['booklet_number']="
+            f"{last_booklet.get('booklet_number')} as int; treating as no last_booklet"
+        )
+        return True
+
+    return booklet_num >= (last_num - lookback)
 
 
 def main():
@@ -21,6 +51,13 @@ def main():
     parser.add_argument('-l', '--last-law', type=int)
     parser.add_argument('-t', '--last-takana', type=int)
     parser.add_argument('-n', '--last-notification', type=int)
+    parser.add_argument(
+        '--lookback', type=int, default=DEFAULT_LOOKBACK,
+        help=(
+            f'How many booklet numbers behind the last known entry to re-check '
+            f'for gaps (default: {DEFAULT_LOOKBACK})'
+        )
+    )
     parser.add_argument('--log')
     args = parser.parse_args()
 
@@ -34,9 +71,9 @@ def main():
     if args.log:
         logging.basicConfig(level=log[args.log])
 
-    laws_dict = get_html('laws', 100)
-    takanot_dict = get_html('takanot', 100)
-    notifications_dict = get_html('notifications', 100)
+    laws_dict = get_html('laws', DEFAULT_FETCH_LIMIT)
+    takanot_dict = get_html('takanot', DEFAULT_FETCH_LIMIT)
+    notifications_dict = get_html('notifications', DEFAULT_FETCH_LIMIT)
 
     laws = clean_data(laws_dict, 'law')
     takanot = clean_data(takanot_dict, 'takana')
@@ -59,9 +96,16 @@ def main():
         else:
             last_notification = db.get_last_notification()
 
-        laws = [law for law in laws if should_insert_booklet(last_law, law)]
-        takanot = [takana for takana in takanot if should_insert_booklet(last_takana, takana)]
-        notifications = [notification for notification in notifications if should_insert_booklet(last_notification, notification)]
+        existing_law_numbers = db.get_all_law_numbers()
+        existing_takana_numbers = db.get_all_takana_numbers()
+        existing_notification_numbers = db.get_all_notification_numbers()
+
+        laws = [law for law in laws
+                if should_insert_booklet(last_law, law, existing_law_numbers, args.lookback)]
+        takanot = [takana for takana in takanot
+                   if should_insert_booklet(last_takana, takana, existing_takana_numbers, args.lookback)]
+        notifications = [notification for notification in notifications
+                         if should_insert_booklet(last_notification, notification, existing_notification_numbers, args.lookback)]
 
         if laws:
             logger.info(f'there are {len(laws)} new laws')
