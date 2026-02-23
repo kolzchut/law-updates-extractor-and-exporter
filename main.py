@@ -27,11 +27,14 @@ def should_insert_booklet(last_booklet, booklet, existing_numbers: set, lookback
       back-filled, as well as anything newer than the last known number.
     """
     booklet_num = int(booklet['booklet_number'])
+    label = booklet.get('booklet_type', '?')
 
     if booklet_num in existing_numbers:
-        return False  # already stored, skip
+        logger.debug(f'  skip {label} #{booklet_num}: already in DB')
+        return False
 
     if not last_booklet:
+        logger.debug(f'  insert {label} #{booklet_num}: no anchor in DB')
         return True
 
     try:
@@ -43,7 +46,13 @@ def should_insert_booklet(last_booklet, booklet, existing_numbers: set, lookback
         )
         return True
 
-    return booklet_num >= (last_num - lookback)
+    threshold = last_num - lookback
+    if booklet_num >= threshold:
+        logger.debug(f'  insert {label} #{booklet_num}: >= threshold {threshold} (anchor={last_num}, lookback={lookback})')
+        return True
+    else:
+        logger.debug(f'  skip {label} #{booklet_num}: {booklet_num} < threshold {threshold} (anchor={last_num}, lookback={lookback})')
+        return False
 
 
 def main():
@@ -79,9 +88,17 @@ def main():
     takanot_dict = get_html('takanot', DEFAULT_FETCH_LIMIT)
     notifications_dict = get_html('notifications', DEFAULT_FETCH_LIMIT)
 
-    laws = clean_data(laws_dict, 'law')
-    takanot = clean_data(takanot_dict, 'takana')
-    notifications = clean_data(notifications_dict, 'notification')
+    logger.debug(f'API returned: {len(laws_dict["Results"])} laws, '
+                 f'{len(takanot_dict["Results"])} takanot, '
+                 f'{len(notifications_dict["Results"])} notifications')
+
+    laws = list(clean_data(laws_dict, 'law'))
+    takanot = list(clean_data(takanot_dict, 'takana'))
+    notifications = list(clean_data(notifications_dict, 'notification'))
+
+    logger.debug(f'after clean_data: {len(laws)} law entries, '
+                 f'{len(takanot)} takana entries, '
+                 f'{len(notifications)} notification entries')
 
     # Deduplicate within each batch by booklet_number, keeping the last occurrence
     def dedup(items):
@@ -93,6 +110,8 @@ def main():
     laws = dedup(laws)
     takanot = dedup(takanot)
     notifications = dedup(notifications)
+
+    logger.debug(f'after dedup: {len(laws)} laws, {len(takanot)} takanot, {len(notifications)} notifications')
 
     with database.Database() as db:
 
@@ -114,6 +133,23 @@ def main():
         existing_law_numbers = db.get_all_law_numbers()
         existing_takana_numbers = db.get_all_takana_numbers()
         existing_notification_numbers = db.get_all_notification_numbers()
+
+        logger.debug(
+            f'anchor laws: booklet #{last_law["booklet_number"] if last_law else "none"} '
+            f'(lookback={args.lookback}, threshold='
+            f'{int(last_law["booklet_number"]) - args.lookback if last_law else "n/a"})'
+        )
+        logger.debug(
+            f'anchor takanot: booklet #{last_takana["booklet_number"] if last_takana else "none"}'
+        )
+        logger.debug(
+            f'anchor notifications: booklet #{last_notification["booklet_number"] if last_notification else "none"}'
+        )
+        logger.debug(
+            f'existing in DB: {len(existing_law_numbers)} law numbers, '
+            f'{len(existing_takana_numbers)} takana numbers, '
+            f'{len(existing_notification_numbers)} notification numbers'
+        )
 
         laws = [law for law in laws
                 if should_insert_booklet(last_law, law, existing_law_numbers, args.lookback)]
