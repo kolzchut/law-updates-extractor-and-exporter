@@ -15,12 +15,14 @@ DEFAULT_FETCH_LIMIT = 500
 DEFAULT_LOOKBACK = 50
 
 
-def should_insert_booklet(last_booklet, booklet, existing_numbers: set, lookback: int):
+def should_insert_booklet(last_booklet, booklet, existing_entries: set, lookback: int):
     """
     Return True if this booklet should be inserted into the DB.
 
     Rules:
-    - Skip if already in the DB (prevents duplicates).
+    - Skip if already in the DB (prevents duplicates). Uniqueness is determined
+      by (booklet_number, display_name) so that different laws within the same
+      booklet are each treated as distinct entries.
     - If no last_booklet exists, treat everything as new.
     - Otherwise accept anything within `lookback` items behind the last known
       number, so that gaps (items the API skipped on a previous run) are
@@ -29,7 +31,7 @@ def should_insert_booklet(last_booklet, booklet, existing_numbers: set, lookback
     booklet_num = int(booklet['booklet_number'])
     label = booklet.get('booklet_type', '?')
 
-    if booklet_num in existing_numbers:
+    if (booklet_num, booklet['display_name']) in existing_entries:
         logger.debug(f'  skip {label} #{booklet_num}: already in DB')
         return False
 
@@ -61,6 +63,10 @@ def main():
     parser.add_argument('-t', '--last-takana', type=int)
     parser.add_argument('-n', '--last-notification', type=int)
     parser.add_argument(
+        '--resend', type=int, metavar='BOOKLET_NUMBER',
+        help='Fetch this booklet from the DB and resend it to Jira without modifying the DB'
+    )
+    parser.add_argument(
         '--lookback', type=int, default=DEFAULT_LOOKBACK,
         help=(
             f'How many booklet numbers behind the last known entry to re-check '
@@ -84,12 +90,25 @@ def main():
     if args.log:
         logging.basicConfig(level=log[args.log])
 
+    if args.resend:
+        with database.Database() as db:
+            items = db.get_full_by_booklet_number(args.resend)
+            if not items:
+                logger.error(f'booklet #{args.resend} not found in DB')
+                return
+            logger.info(f'resending booklet #{args.resend} to Jira ({len(items)} row(s))')
+            jira_api = JiraApi()
+            sent = jira_api.send(items, dry_run=args.dry_run)
+            for datum, jira_key in sent:
+                db.update_jira_key_by_id(datum['id'], jira_key)
+        return
+
     laws_dict = get_html('laws', DEFAULT_FETCH_LIMIT)
     takanot_dict = get_html('takanot', DEFAULT_FETCH_LIMIT)
     notifications_dict = get_html('notifications', DEFAULT_FETCH_LIMIT)
 
     logger.debug(f'API returned: {len(laws_dict["Results"])} laws, '
-                 f'{len(takanot_dict["Results"])} takanot, '
+                 f'{len(takanot_dict["Results"])} regulations, '
                  f'{len(notifications_dict["Results"])} notifications')
 
     laws = list(clean_data(laws_dict, 'law'))
@@ -97,21 +116,23 @@ def main():
     notifications = list(clean_data(notifications_dict, 'notification'))
 
     logger.debug(f'after clean_data: {len(laws)} law entries, '
-                 f'{len(takanot)} takana entries, '
+                 f'{len(takanot)} regulation entries, '
                  f'{len(notifications)} notification entries')
 
-    # Deduplicate within each batch by booklet_number, keeping the last occurrence
+    # Deduplicate within each batch: the API can return the same entry twice.
+    # Key by (booklet_number, display_name) so different laws within the same
+    # booklet are kept as separate entries.
     def dedup(items):
         seen = {}
         for item in items:
-            seen[item['booklet_number']] = item
+            seen[(item['booklet_number'], item['display_name'])] = item
         return list(seen.values())
 
     laws = dedup(laws)
     takanot = dedup(takanot)
     notifications = dedup(notifications)
 
-    logger.debug(f'after dedup: {len(laws)} laws, {len(takanot)} takanot, {len(notifications)} notifications')
+    logger.debug(f'after dedup: {len(laws)} laws, {len(takanot)} regulations, {len(notifications)} notifications')
 
     with database.Database() as db:
 
@@ -130,9 +151,9 @@ def main():
         else:
             last_notification = db.get_last_notification()
 
-        existing_law_numbers = db.get_all_law_numbers()
-        existing_takana_numbers = db.get_all_takana_numbers()
-        existing_notification_numbers = db.get_all_notification_numbers()
+        existing_law_entries = db.get_all_law_entries()
+        existing_takana_entries = db.get_all_takana_entries()
+        existing_notification_entries = db.get_all_notification_entries()
 
         logger.debug(
             f'anchor laws: booklet #{last_law["booklet_number"] if last_law else "none"} '
@@ -140,66 +161,66 @@ def main():
             f'{int(last_law["booklet_number"]) - args.lookback if last_law else "n/a"})'
         )
         logger.debug(
-            f'anchor takanot: booklet #{last_takana["booklet_number"] if last_takana else "none"}'
+            f'anchor regulations: booklet #{last_takana["booklet_number"] if last_takana else "none"}'
         )
         logger.debug(
             f'anchor notifications: booklet #{last_notification["booklet_number"] if last_notification else "none"}'
         )
         logger.debug(
-            f'existing in DB: {len(existing_law_numbers)} law numbers, '
-            f'{len(existing_takana_numbers)} takana numbers, '
-            f'{len(existing_notification_numbers)} notification numbers'
+            f'existing in DB: {len(existing_law_entries)} law entries, '
+            f'{len(existing_takana_entries)} regulation entries, '
+            f'{len(existing_notification_entries)} notification entries'
         )
 
         laws = [law for law in laws
-                if should_insert_booklet(last_law, law, existing_law_numbers, args.lookback)]
+                if should_insert_booklet(last_law, law, existing_law_entries, args.lookback)]
         takanot = [takana for takana in takanot
-                   if should_insert_booklet(last_takana, takana, existing_takana_numbers, args.lookback)]
+                   if should_insert_booklet(last_takana, takana, existing_takana_entries, args.lookback)]
         notifications = [notification for notification in notifications
-                         if should_insert_booklet(last_notification, notification, existing_notification_numbers, args.lookback)]
+                         if should_insert_booklet(last_notification, notification, existing_notification_entries, args.lookback)]
 
-        if laws:
-            logger.info(f'there are {len(laws)} new laws')
-        else:
-            logger.info(f'there are no new laws')
+        def _summary_line(label, items):
+            if items:
+                numbers = ', '.join(str(i['booklet_number']) for i in items)
+                return f'  {len(items)} new {label}: {numbers}'
+            return f'  0 new {label}'
 
-        if takanot:
-            logger.info(f'there are {len(takanot)} new takanot')
-        else:
-            logger.info(f'there are no new takanot')
-
-        if notifications:
-            logger.info(f'there are {len(notifications)} new notifications')
-        else:
-            logger.info(f'there are no new notifications')
+        logger.info('Retrieved:\n' + '\n'.join([
+            _summary_line('laws', laws),
+            _summary_line('regulations', takanot),
+            _summary_line('notifications', notifications),
+        ]))
 
         for law in laws:
             if args.dry_run:
                 print(f'[DRY RUN] would insert law: {law["booklet_number"]} – {law["display_name"]}')
             else:
-                db.insert_law(law)
+                law['id'] = db.insert_law(law)
 
         for takana in takanot:
             if args.dry_run:
                 print(f'[DRY RUN] would insert takana: {takana["booklet_number"]} – {takana["display_name"]}')
             else:
-                db.insert_takana(takana)
+                takana['id'] = db.insert_takana(takana)
 
         for notification in notifications:
             if args.dry_run:
                 print(f'[DRY RUN] would insert notification: {notification["booklet_number"]} – {notification["display_name"]}')
             else:
-                db.insert_notification(notification)
+                notification['id'] = db.insert_notification(notification)
 
         all_items = list(laws)
         all_items.extend(takanot)
         all_items.extend(notifications)
         if all_items:
+            logger.info(f'Sending {len(all_items)} item(s) to Jira')
             if args.dry_run:
                 print(f'[DRY RUN] would send {len(all_items)} item(s) to Jira')
             else:
                 jira_api = JiraApi()
-                jira_api.send(all_items)
+                sent = jira_api.send(all_items)
+                for datum, jira_key in sent:
+                    db.update_jira_key_by_id(datum['id'], jira_key)
 
     logger.info('done')
 
