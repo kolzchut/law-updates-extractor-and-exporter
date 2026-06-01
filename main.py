@@ -78,7 +78,7 @@ def main():
         '--dry-run', action='store_true',
         help='Preview what would be inserted into the DB and sent to Jira, without doing either'
     )
-    parser.add_argument('--log')
+    parser.add_argument('--log', choices=['debug', 'info', 'warning', 'error'])
     args = parser.parse_args()
 
     log = {

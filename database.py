@@ -24,7 +24,15 @@ class Database:
         return os.path.join(os.environ.get('LAW_UPDATES_STATE_DIR', '.'), 'kzdb.sqlite')
 
     def __enter__(self):
-        self.conn = sqlite3.connect(self.db_path())
+        path = self.db_path()
+        # Don't let sqlite3.connect() create a misleading empty DB file when
+        # the state share hasn't been seeded — fail before touching disk.
+        if path != ':memory:' and not os.path.exists(path):
+            raise SystemExit(
+                f"State DB not found at {path}. Seed it from the production "
+                "DB before running (see README)."
+            )
+        self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self._require_booklet_table()
         self._ensure_jira_key_column()

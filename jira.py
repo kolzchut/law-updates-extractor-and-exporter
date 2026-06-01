@@ -97,7 +97,7 @@ class JiraApi:
             logger.warning(f'Rate limited by Jira, waiting {wait}s...')
             time.sleep(wait)
             res = requests.get(
-                'https://kolzchut.atlassian.net/rest/api/3/search/jql',
+                self.search_url,
                 headers=self.headers,
                 params=params,
             )
