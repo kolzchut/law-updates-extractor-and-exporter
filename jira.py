@@ -11,7 +11,11 @@ logger = logging.getLogger(__name__)
 
 class JiraApi:
     def __init__(self):
-        self.url = 'https://kolzchut.atlassian.net/rest/api/2/issue/'
+        base = os.environ.get('JIRA_API_URL', 'https://kolzchut.atlassian.net').rstrip('/')
+        self.url = f'{base}/rest/api/2/issue/'
+        self.search_url = f'{base}/rest/api/3/search/jql'
+        self.project = os.environ.get('JIRA_PROJECT', 'KOL')
+        self.had_errors = False
         self.user_name = os.environ['JIRA_API_USER']
         api_token = os.environ['JIRA_API_TOKEN']
         token = f'{self.user_name}:{api_token}'
@@ -22,14 +26,18 @@ class JiraApi:
         }
 
     def send(self, data, dry_run=False):
-        """Send items to Jira. Returns list of (datum, jira_key) for each successfully created issue."""
+        """Send items to Jira. Returns list of (datum, jira_key) for each successfully created issue.
+
+        Sets self.had_errors True if any send failed, so the caller can exit non-zero.
+        """
+        self.had_errors = False
         results = []
         for datum in data:
             summary = datum['display_name'] if len(datum['display_name']) < 255 else f"{datum['display_name'][:250]}..."
             payload = {
                 'fields': {
                     'project': {
-                        'key': 'KOL',
+                        'key': self.project,
                     },
                     'summary': summary,
                     'description': datum['description'],
@@ -53,6 +61,7 @@ class JiraApi:
             if res.status_code >= 300:
                 logger.error(f'  #{booklet_num} failed – status {res.status_code}: {res.content}')
                 logger.error(f'  file: {datum["file_name"]}')
+                self.had_errors = True
                 break
             else:
                 jira_key = res.json().get('key')
@@ -79,7 +88,7 @@ class JiraApi:
         """Execute a JQL search, handling rate limiting. Returns list of issues or None on error."""
         params = {'jql': jql, 'maxResults': max_results, 'fields': fields}
         res = requests.get(
-            'https://kolzchut.atlassian.net/rest/api/3/search/jql',
+            self.search_url,
             headers=self.headers,
             params=params,
         )
@@ -101,7 +110,7 @@ class JiraApi:
         """Search Jira for an issue by file URL (customfield_11689).
         Uses exact JQL match on cf[11689], which is unique per issue.
         Returns the issue key string, or None if not found."""
-        jql = f'project = KOL AND cf[11689] = "{self._jql_escape(file_name)}"'
+        jql = f'project = {self.project} AND cf[11689] = "{self._jql_escape(file_name)}"'
         issues = self._search_jql(jql, fields='summary', max_results=2)
         if issues is None:
             return None
@@ -126,7 +135,7 @@ class JiraApi:
         # The post-filter on the full display_name catches any false positives.
         if '"' in search_term:
             search_term = search_term.split('"')[0].strip().rstrip(',').strip()
-        jql = f'project = KOL AND summary ~ "{self._jql_escape(search_term)}"'
+        jql = f'project = {self.project} AND summary ~ "{self._jql_escape(search_term)}"'
         issues = self._search_jql(jql, fields='summary,customfield_11690')
         if issues is None:
             return None

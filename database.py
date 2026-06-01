@@ -1,3 +1,4 @@
+import os
 import sqlite3
 
 
@@ -8,11 +9,45 @@ class Database:
         "notification": 3
     }
 
+    @staticmethod
+    def db_path():
+        """Resolve the SQLite path from the environment.
+
+        LAW_UPDATES_DB_PATH wins if set; otherwise the DB is named
+        kzdb.sqlite inside LAW_UPDATES_STATE_DIR (the mounted state
+        share in the Container Apps Job), defaulting to the CWD for
+        local runs.
+        """
+        explicit = os.environ.get('LAW_UPDATES_DB_PATH')
+        if explicit:
+            return explicit
+        return os.path.join(os.environ.get('LAW_UPDATES_STATE_DIR', '.'), 'kzdb.sqlite')
+
     def __enter__(self):
-        self.conn = sqlite3.connect('kzdb.sqlite')
+        self.conn = sqlite3.connect(self.db_path())
         self.conn.row_factory = sqlite3.Row
+        self._require_booklet_table()
         self._ensure_jira_key_column()
         return self
+
+    def _require_booklet_table(self):
+        """Refuse to run against a DB that has no `booklet` table.
+
+        The state DB is seeded from production — it is NOT created from
+        scratch here on purpose. An empty DB has no anchor rows, so the
+        scraper would treat every fetched item as new and post hundreds
+        of duplicate issues to Jira. Fail loudly instead.
+        """
+        exists = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='booklet'"
+        ).fetchone()
+        if exists:
+            return
+        raise SystemExit(
+            f"State DB at {self.db_path()} has no 'booklet' table. "
+            "Seed it from the production DB before running (see README). "
+            "Running against an empty DB would flood Jira with duplicates."
+        )
 
     def _ensure_jira_key_column(self):
         cols = {row['name'] for row in self.conn.execute('PRAGMA table_info(booklet)').fetchall()}

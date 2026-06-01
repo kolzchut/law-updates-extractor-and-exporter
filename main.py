@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import sys
 
 from cleaner import clean_data
 import database
@@ -87,21 +88,22 @@ def main():
         'error': logging.ERROR,
     }
 
-    if args.log:
-        logging.basicConfig(level=log[args.log])
+    # Default to INFO so scheduled runs emit their summary to stdout
+    # (captured by Azure Log Analytics); --log overrides.
+    logging.basicConfig(level=log[args.log] if args.log else logging.INFO)
 
     if args.resend:
         with database.Database() as db:
             items = db.get_full_by_booklet_number(args.resend)
             if not items:
                 logger.error(f'booklet #{args.resend} not found in DB')
-                return
+                return 1
             logger.info(f'resending booklet #{args.resend} to Jira ({len(items)} row(s))')
             jira_api = JiraApi()
             sent = jira_api.send(items, dry_run=args.dry_run)
             for datum, jira_key in sent:
                 db.update_jira_key_by_id(datum['id'], jira_key)
-        return
+            return 1 if jira_api.had_errors else 0
 
     laws_dict = get_html('laws', DEFAULT_FETCH_LIMIT)
     takanot_dict = get_html('takanot', DEFAULT_FETCH_LIMIT)
@@ -221,9 +223,13 @@ def main():
                 sent = jira_api.send(all_items)
                 for datum, jira_key in sent:
                     db.update_jira_key_by_id(datum['id'], jira_key)
+                if jira_api.had_errors:
+                    logger.error('one or more items failed to post to Jira')
+                    return 1
 
     logger.info('done')
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
