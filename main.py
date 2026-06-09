@@ -8,12 +8,32 @@ from cleaner import clean_data
 import database
 from scraper import get_html
 from jira import JiraApi
+from logsetup import configure_logging
 
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_FETCH_LIMIT = 500
 DEFAULT_LOOKBACK = 50
+
+
+def emit_run_summary(status, *, dry_run, counts=None, jira_keys=None, error=None):
+    """Emit the single authoritative end-of-run event.
+
+    With ``--log-format json`` this serialises to one JSON line carrying the
+    machine-readable outcome (``status`` ok/error, booklet ``counts``, the
+    per-item ``jira_keys``, and any ``error``), so dashboards and the failure
+    alert can pivot on structured fields rather than scraping log text.
+    """
+    summary = {
+        "status": status,
+        "dry_run": dry_run,
+        "counts": counts or {},
+        "jira_keys": jira_keys or [],
+    }
+    if error is not None:
+        summary["error"] = error
+    logger.info("run complete", extra={"event": "run_summary", "summary": summary})
 
 
 def should_insert_booklet(last_booklet, booklet, existing_entries: set, lookback: int):
@@ -79,6 +99,12 @@ def main():
         help='Preview what would be inserted into the DB and sent to Jira, without doing either'
     )
     parser.add_argument('--log', choices=['debug', 'info', 'warning', 'error'])
+    parser.add_argument(
+        '--log-format', choices=['text', 'json'], default='text',
+        help='Log output format. "json" emits one JSON object per line for '
+             'Log Analytics (the scheduled job uses it); "text" is the '
+             'human-readable default for local runs.'
+    )
     args = parser.parse_args()
 
     log = {
@@ -90,19 +116,40 @@ def main():
 
     # Default to INFO so scheduled runs emit their summary to stdout
     # (captured by Azure Log Analytics); --log overrides.
-    logging.basicConfig(level=log[args.log] if args.log else logging.INFO)
+    configure_logging(log[args.log] if args.log else logging.INFO, args.log_format)
 
+    # Run the work, but guarantee exactly one run_summary even on an
+    # unhandled error so the failure alert always has a structured signal.
+    try:
+        return _run(args)
+    except Exception as exc:
+        logger.exception('unhandled error during run')
+        emit_run_summary('error', dry_run=args.dry_run, error=str(exc))
+        return 1
+
+
+def _run(args):
     if args.resend:
         with database.Database() as db:
             items = db.get_full_by_booklet_number(args.resend)
             if not items:
                 logger.error(f'booklet #{args.resend} not found in DB')
+                emit_run_summary('error', dry_run=args.dry_run,
+                                 error=f'booklet #{args.resend} not found in DB')
                 return 1
             logger.info(f'resending booklet #{args.resend} to Jira ({len(items)} row(s))')
             jira_api = JiraApi()
             sent = jira_api.send(items, dry_run=args.dry_run)
+            jira_keys = [jira_key for _, jira_key in sent]
             for datum, jira_key in sent:
                 db.update_jira_key_by_id(datum['id'], jira_key)
+            emit_run_summary(
+                'error' if jira_api.had_errors else 'ok',
+                dry_run=args.dry_run,
+                counts={'resend': len(items)},
+                jira_keys=jira_keys,
+                error='one or more items failed to post to Jira' if jira_api.had_errors else None,
+            )
             return 1 if jira_api.had_errors else 0
 
     laws_dict = get_html('laws', DEFAULT_FETCH_LIMIT)
@@ -214,6 +261,8 @@ def main():
         all_items = list(laws)
         all_items.extend(takanot)
         all_items.extend(notifications)
+        jira_keys = []
+        had_errors = False
         if all_items:
             logger.info(f'Sending {len(all_items)} item(s) to Jira')
             if args.dry_run:
@@ -221,14 +270,28 @@ def main():
             else:
                 jira_api = JiraApi()
                 sent = jira_api.send(all_items)
+                jira_keys = [jira_key for _, jira_key in sent]
                 for datum, jira_key in sent:
                     db.update_jira_key_by_id(datum['id'], jira_key)
-                if jira_api.had_errors:
+                had_errors = jira_api.had_errors
+                if had_errors:
                     logger.error('one or more items failed to post to Jira')
-                    return 1
 
+    counts = {
+        'laws': len(laws),
+        'regulations': len(takanot),
+        'notifications': len(notifications),
+        'total': len(all_items),
+    }
+    emit_run_summary(
+        'error' if had_errors else 'ok',
+        dry_run=args.dry_run,
+        counts=counts,
+        jira_keys=jira_keys,
+        error='one or more items failed to post to Jira' if had_errors else None,
+    )
     logger.info('done')
-    return 0
+    return 1 if had_errors else 0
 
 
 if __name__ == '__main__':
