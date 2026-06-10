@@ -27,3 +27,23 @@ fetched item would look new and flood Jira with duplicates.
 - `--last-notification`, `-n`: override the last notification number stored in the sqlite DB and get all updates since this one
 - `--log`: enable to change the log level; possible parameters are:
   - debug, info, warning, error
+- `--log-format`: `text` (default, human-readable) or `json` (one JSON object
+  per line). The scheduled Container Apps Job runs with `--log-format json` so
+  Azure Log Analytics can query individual fields.
+
+## Structured logging
+With `--log-format json` every log line is a JSON object (`time`, `level`,
+`logger`, `message`, plus any structured fields). At the end of every run the
+scraper emits exactly one **`run_summary`** event:
+
+```json
+{"time": "...", "level": "INFO", "logger": "__main__", "message": "run complete",
+ "event": "run_summary",
+ "summary": {"status": "ok", "dry_run": false,
+             "counts": {"laws": 2, "regulations": 0, "notifications": 1, "total": 3},
+             "jira_keys": ["KOL-101", "KOL-102", "KOL-103"]}}
+```
+
+`summary.status` is `"error"` (with a `summary.error` message) if any item
+failed to post to Jira or the run hit an unhandled exception — the deployment's
+failure alert pivots on this field.
