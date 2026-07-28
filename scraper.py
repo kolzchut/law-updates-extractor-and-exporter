@@ -35,9 +35,12 @@ _RETRY = Retry(
     allowed_methods=frozenset({'POST'}),
     status_forcelist=(429, 502, 503, 504),
     # Sleeps 0s, 4s, 8s, 16s, 32s (urllib3 skips the backoff on the first
-    # retry, then doubles from backoff_factor * 2) — 60s per fetch worst case,
-    # so ~180s across the three fetches. Comfortably inside the job's 1800s
-    # replica timeout even if every fetch has to exhaust its retries.
+    # retry, then doubles from backoff_factor * 2) — 60s of backoff per fetch.
+    #
+    # Backoff is only part of the worst case: each of the 6 attempts can also
+    # burn its full timeout, so a fetch can take 6 * (10 + 30) + 60 = ~300s,
+    # and a run ~900s across the three fetches. That still leaves half of the
+    # job's 1800s replica timeout for the Jira posting that follows.
     backoff_factor=2,
     raise_on_status=False,
 )
@@ -52,7 +55,12 @@ _session.mount('http://', _adapter)
 # (connect, read). Without a timeout a hung connection blocks until the job's
 # replica timeout kills it — and a request that never returns never triggers a
 # retry either, which would defeat the whole point.
-_TIMEOUT = (10, 60)
+#
+# The read budget is deliberately tight: a full 500-item fetch measures 1-4s
+# against the live API, so 30s is ~10x headroom. Keeping it low matters because
+# the timeout is per attempt and there are 6 of them — a generous value
+# multiplies into the run's worst case (see the retry budget above).
+_TIMEOUT = (10, 30)
 
 
 def get_html(source, limit=10, skip=0):
@@ -80,4 +88,9 @@ def get_html(source, limit=10, skip=0):
     if res.status_code == 200:
         return res.json()
     logger.error(f"We didn't get 200 from {source}, we got {res.status_code}")
-    raise SystemExit(f'We got {res.status_code} from {source}')
+    # A plain Exception, not SystemExit: SystemExit derives from BaseException,
+    # so main()'s `except Exception` would not catch it and the run would end
+    # without its run_summary — leaving the failure alert with no reason to
+    # report. That mattered little while this branch was near-unreachable, but
+    # retries now route every persistent 429/502/503/504 straight through it.
+    raise RuntimeError(f'We got {res.status_code} from {source}')

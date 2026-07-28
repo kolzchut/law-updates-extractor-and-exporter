@@ -50,9 +50,13 @@ failure alert pivots on this field.
 
 ## Upstream API resilience
 The Ministry of Justice API drops connections periodically, so `get_html()`
-retries each fetch up to 5 times with exponential backoff (worst case ~60s per
-fetch, ~180s for a full run) before giving up. Retries cover refused/reset
-connections and 429/502/503/504 responses.
+retries each fetch up to 5 times with exponential backoff before giving up.
+Retries cover refused/reset connections and 429/502/503/504 responses.
+
+Budget: backoff adds up to ~60s per fetch, and each of the 6 attempts also
+carries a `(10s connect, 30s read)` timeout, so a pathological fetch can reach
+~300s and a full run ~900s — against the deployment's 1800s replica timeout.
+A healthy fetch takes 1-4s.
 
 This is deliberately limited to the read-only fetch. The scraper is **not**
 idempotent against partial Jira posts, which is why the deployment runs the job
