@@ -47,3 +47,20 @@ scraper emits exactly one **`run_summary`** event:
 `summary.status` is `"error"` (with a `summary.error` message) if any item
 failed to post to Jira or the run hit an unhandled exception — the deployment's
 failure alert pivots on this field.
+
+## Upstream API resilience
+The Ministry of Justice API drops connections periodically, so `get_html()`
+retries each fetch up to 5 times with exponential backoff before giving up.
+Retries cover refused/reset connections and 429/502/503/504 responses.
+
+Budget: backoff adds up to ~60s per fetch, and each of the 6 attempts also
+carries a `(10s connect, 30s read)` timeout, so a pathological fetch can reach
+~300s and a full run ~900s — against the deployment's 1800s replica timeout.
+A healthy fetch takes 1-4s.
+
+This is deliberately limited to the read-only fetch. The scraper is **not**
+idempotent against partial Jira posts, which is why the deployment runs the job
+with `replicaRetryLimit: 0` — do not add whole-job retries on top.
+
+A genuine outage still fails the run and fires the alert; the retries only
+absorb faults that clear within the backoff budget.
