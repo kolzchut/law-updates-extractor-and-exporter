@@ -1,2 +1,2 @@
-requests~=2.26.0
-urllib3~=1.26.7
+requests~=2.34
+urllib3>=2.8.0,<3
