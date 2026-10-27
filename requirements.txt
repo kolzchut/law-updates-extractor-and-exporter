@@ -1,2 +1,8 @@
 requests~=2.34
 urllib3>=2.8.0,<3
+# certifi comes in through requests, which leaves it unpinned. The floor keeps
+# a build from resolving a bundle that still trusts the emSign ECC Root CA - G3,
+# whose intermediate CA keys were compromised (GHSA-6q48-6c7w-9gw2). 2026.10.18
+# removed every emSign root and 2026.10.19 restored the unaffected ones, which is
+# the release the advisory recommends.
+certifi>=2026.10.19
