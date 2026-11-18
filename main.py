@@ -17,13 +17,24 @@ DEFAULT_FETCH_LIMIT = 500
 DEFAULT_LOOKBACK = 50
 
 
-def emit_run_summary(status, *, dry_run, counts=None, jira_keys=None, error=None):
+_UNSET = object()
+
+
+def emit_run_summary(status, *, dry_run, counts=None, jira_keys=None, error=None,
+                     newest_published_date=_UNSET):
     """Emit the single authoritative end-of-run event.
 
     With ``--log-format json`` this serialises to one JSON line carrying the
     machine-readable outcome (``status`` ok/error, booklet ``counts``, the
     per-item ``jira_keys``, and any ``error``), so dashboards and the failure
     alert can pivot on structured fields rather than scraping log text.
+
+    ``newest_published_date`` is the newest publication date in the state DB
+    once the run is done, as an ISO 8601 string with its UTC offset, or null
+    when no stored row has a readable date. Only a scrape run sets it. A
+    resend, and a run that failed before it read the DB, leave the key out
+    rather than reporting null, so a reader can tell "not measured" from
+    "measured and empty".
     """
     summary = {
         "status": status,
@@ -31,6 +42,9 @@ def emit_run_summary(status, *, dry_run, counts=None, jira_keys=None, error=None
         "counts": counts or {},
         "jira_keys": jira_keys or [],
     }
+    if newest_published_date is not _UNSET:
+        summary["newest_published_date"] = (
+            newest_published_date.isoformat() if newest_published_date else None)
     if error is not None:
         summary["error"] = error
     logger.info("run complete", extra={"event": "run_summary", "summary": summary})
@@ -277,6 +291,18 @@ def _run(args):
                 if had_errors:
                     logger.error('one or more items failed to post to Jira')
 
+        # Read after the inserts, so it includes what this run added. In a dry
+        # run nothing was inserted, so it is the DB as the run found it. The
+        # items are already in Jira by now, so a failed read must not turn the
+        # run into an error and drop its counts and keys from the summary: it
+        # is logged, and reported as null, which the deployment alerts on.
+        try:
+            newest_published_date = db.get_newest_published_date()
+        except Exception:
+            logger.warning('could not read the newest published date from the DB',
+                           exc_info=True)
+            newest_published_date = None
+
     counts = {
         'laws': len(laws),
         'regulations': len(takanot),
@@ -289,6 +315,7 @@ def _run(args):
         counts=counts,
         jira_keys=jira_keys,
         error='one or more items failed to post to Jira' if had_errors else None,
+        newest_published_date=newest_published_date,
     )
     logger.info('done')
     return 1 if had_errors else 0
