@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from datetime import datetime, timezone
 
 
 class Database:
@@ -165,6 +166,34 @@ class Database:
                 f'SELECT booklet_number, display_name FROM booklet WHERE booklet_type = {item_type}'
             ).fetchall()
             return {(int(row['booklet_number']), row['display_name']) for row in rows}
+
+    def get_newest_published_date(self):
+        """Return the newest ``published_date`` of any stored row, or None.
+
+        This is how fresh the stored feed is. The run summary reports it so
+        the deployment can tell a feed that has been quiet for days from one
+        that skipped a day. A run's ``counts`` cannot tell the two apart: a
+        run that inserts nothing is normal, because Reshumot does not publish
+        every day.
+
+        All rows are read, not only the latest inserts: a gap back-fill (see
+        ``should_insert_booklet``) can insert a row with an older date last.
+        A value that does not parse as ISO 8601 is skipped. A value with no
+        UTC offset is read as UTC, which can move it by the Israeli offset,
+        at most three hours. The caller works in whole days.
+        """
+        newest = None
+        for row in self.conn.execute(
+                'SELECT published_date FROM booklet WHERE published_date IS NOT NULL'):
+            try:
+                when = datetime.fromisoformat(str(row['published_date']))
+            except ValueError:
+                continue
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            if newest is None or when > newest:
+                newest = when
+        return newest
 
     def get_all_law_entries(self):
         return self.get_all_entries_of_type(self.booklet_types['law'])

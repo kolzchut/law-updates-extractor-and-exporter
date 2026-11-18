@@ -41,12 +41,21 @@ scraper emits exactly one **`run_summary`** event:
  "event": "run_summary",
  "summary": {"status": "ok", "dry_run": false,
              "counts": {"laws": 2, "regulations": 0, "notifications": 1, "total": 3},
-             "jira_keys": ["KOL-101", "KOL-102", "KOL-103"]}}
+             "jira_keys": ["KOL-101", "KOL-102", "KOL-103"],
+             "newest_published_date": "2026-11-17T14:51:14+02:00"}}
 ```
 
 `summary.status` is `"error"` (with a `summary.error` message) if any item
 failed to post to Jira or the run hit an unhandled exception — the deployment's
 failure alert pivots on this field.
+
+`summary.newest_published_date` is the newest `published_date` in the state DB
+after the run, with its UTC offset, or `null` if no stored row has a readable
+date. A scrape run always carries it; a `--resend` run, and a run that failed
+before it read the DB, leave it out. `counts.total` is 0 on every day Reshumot
+does not publish, so a zero count alone cannot tell a weekend or a holiday from
+a dead feed. The deployment's alert reads this field to page only when nothing
+new has been published for several days.
 
 ## Upstream API resilience
 The Ministry of Justice API drops connections periodically, so `get_html()`
